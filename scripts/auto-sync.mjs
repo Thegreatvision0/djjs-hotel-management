@@ -29,6 +29,15 @@ async function sync() {
     const files = status.split("\n").filter((l) => l.trim()).map((l) => l.slice(3).replace(/^"|"$/g, ""));
     if (!files.length) return;
     await git("add", "-A");
+    // Safety: never upload database credentials (e.g. a real MONGO_URI pasted into .env.example).
+    const { stdout: diff } = await git("diff", "--cached", "-U0");
+    const leaks = diff.split("\n").filter((l) => l.startsWith("+") && /mongodb(\+srv)?:\/\/[^:\s/@]+:[^@\s]+@/.test(l) && !/\/\/user:pass@/.test(l));
+    if (leaks.length) {
+      await git("reset", "-q");
+      log("⛔ Not synced: a change contains a database password (mongodb://user:password@…).");
+      log("   Put real credentials only in server/.env (never uploaded), then save again.");
+      return;
+    }
     const summary = files.length <= 3 ? files.join(", ") : `${files.slice(0, 3).join(", ")} +${files.length - 3} more`;
     await git("commit", "-m", `Auto-sync: ${summary}`);
     try {
