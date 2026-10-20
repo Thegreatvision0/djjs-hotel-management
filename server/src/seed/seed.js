@@ -7,6 +7,7 @@ import Reservation from "../models/Reservation.js";
 import Counter, { nextConfirmationNo, nextReceiptNo } from "../models/Counter.js";
 import { HousekeepingTask, MenuItem, PosOrder, AuditLog, NightAudit } from "../models/Operations.js";
 import { todayStr, addDays, nightsBetween } from "../utils/dates.js";
+import { env } from "../config/env.js";
 
 const T = todayStr();
 const d = (n) => addDays(T, n);
@@ -192,8 +193,38 @@ async function seedOperations(props) {
   ]);
 }
 
+// The built-in demo admin (admin123) is only used when no ADMIN_EMAIL/ADMIN_PASSWORD is configured,
+// and never in production.
+function demoUsersToCreate() {
+  const envAdmin = env.adminEmail && env.adminPassword;
+  return DEMO_USERS.filter((u) => u.role !== "Admin" || (!envAdmin && !env.isProd));
+}
+
+// Creates the admin from ADMIN_EMAIL / ADMIN_PASSWORD, or updates its password, name and role
+// if it already exists, so changing the variables (e.g. in Vercel) takes effect on the next start.
+export async function ensureAdminFromEnv() {
+  if (!env.adminEmail || !env.adminPassword) {
+    if (env.isProd) console.warn("⚠  ADMIN_EMAIL / ADMIN_PASSWORD not set — no admin account is managed from the environment");
+    return;
+  }
+  if (env.adminPassword.length < 8) console.warn("⚠  ADMIN_PASSWORD is shorter than 8 characters — choose a stronger password");
+  let user = await User.findOne({ email: env.adminEmail }).select("+passwordHash");
+  if (!user) {
+    user = new User({ name: env.adminName, email: env.adminEmail, role: "Admin" });
+    await user.setPassword(env.adminPassword);
+    await user.save();
+    console.log(`✓ Admin account created: ${env.adminEmail}`);
+    return;
+  }
+  let changed = false;
+  if (!(await user.checkPassword(env.adminPassword))) { await user.setPassword(env.adminPassword); changed = true; }
+  if (user.role !== "Admin" || !user.active) { user.role = "Admin"; user.active = true; changed = true; }
+  if (user.name !== env.adminName) { user.name = env.adminName; changed = true; }
+  if (changed) { await user.save(); console.log(`✓ Admin account updated from environment: ${env.adminEmail}`); }
+}
+
 export async function seedAll() {
-  for (const u of DEMO_USERS) {
+  for (const u of demoUsersToCreate()) {
     const user = new User({ name: u.name, email: u.email, role: u.role });
     await user.setPassword(u.password);
     await user.save();

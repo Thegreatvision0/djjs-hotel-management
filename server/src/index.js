@@ -2,11 +2,12 @@ import os from "node:os";
 import { env } from "./config/env.js";
 import { connectDB } from "./config/db.js";
 import { createApp } from "./app.js";
-import { seedIfEmpty } from "./seed/seed.js";
+import { seedIfEmpty, ensureAdminFromEnv } from "./seed/seed.js";
 
 async function main() {
   await connectDB();
   if (env.seedOnEmpty) await seedIfEmpty();
+  await ensureAdminFromEnv();
   const app = createApp();
   app.listen(env.port, "0.0.0.0", () => {
     console.log(`✓ Listening on http://localhost:${env.port}`);
