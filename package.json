@@ -2,6 +2,7 @@
   "name": "djjs-hotel-management",
   "version": "2.0.0",
   "private": true,
+  "type": "module",
   "description": "DJJS Hotel property management system — MERN stack",
   "scripts": {
     "setup": "npm install && npm install --prefix server && npm install --prefix client",
