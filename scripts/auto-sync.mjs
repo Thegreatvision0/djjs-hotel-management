@@ -25,8 +25,9 @@ async function sync() {
   busy = true;
   try {
     const { stdout: status } = await git("status", "--porcelain");
-    if (!status.trim()) return;
-    const files = status.trim().split("\n").map((l) => l.slice(3).replace(/^"|"$/g, ""));
+    // Each line is "XY path": keep the leading status columns intact (don't trim before slicing).
+    const files = status.split("\n").filter((l) => l.trim()).map((l) => l.slice(3).replace(/^"|"$/g, ""));
+    if (!files.length) return;
     await git("add", "-A");
     const summary = files.length <= 3 ? files.join(", ") : `${files.slice(0, 3).join(", ")} +${files.length - 3} more`;
     await git("commit", "-m", `Auto-sync: ${summary}`);
