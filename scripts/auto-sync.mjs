@@ -31,10 +31,13 @@ async function sync() {
     await git("add", "-A");
     // Safety: never upload database credentials (e.g. a real MONGO_URI pasted into .env.example).
     const { stdout: diff } = await git("diff", "--cached", "-U0");
-    const leaks = diff.split("\n").filter((l) => l.startsWith("+") && /mongodb(\+srv)?:\/\/[^:\s/@]+:[^@\s]+@/.test(l) && !/\/\/user:pass@/.test(l));
-    if (leaks.length) {
+    const added = diff.split("\n").filter((l) => l.startsWith("+") && !l.startsWith("+++"));
+    const dbLeak = added.some((l) => /mongodb(\+srv)?:\/\/[^:\s/@]+:[^@\s]+@/.test(l) && !/\/\/user:pass@/.test(l));
+    // Real values for secret settings, e.g. ADMIN_PASSWORD=MyPass1 pasted into .env.example
+    const keyLeak = added.some((l) => /^\+\s*(ADMIN_PASSWORD|JWT_SECRET)=(?!\s*$|change-me)/.test(l));
+    if (dbLeak || keyLeak) {
       await git("reset", "-q");
-      log("⛔ Not synced: a change contains a database password (mongodb://user:password@…).");
+      log(`⛔ Not synced: a change contains a ${dbLeak ? "database password (mongodb://user:password@…)" : "real ADMIN_PASSWORD / JWT_SECRET value"}.`);
       log("   Put real credentials only in server/.env (never uploaded), then save again.");
       return;
     }
