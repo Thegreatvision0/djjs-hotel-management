@@ -32,6 +32,7 @@ r.get("/", ah(async (_req, res) => {
     hkStatuses: C.HK_STATUSES,
     priorities: C.PRIORITIES,
     posOrderStatuses: C.POS_ORDER_STATUSES,
+    posTables: C.POS_TABLES,
   });
 }));
 

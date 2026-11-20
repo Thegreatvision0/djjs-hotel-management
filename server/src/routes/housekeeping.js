@@ -41,6 +41,7 @@ r.post("/", ah(async (req, res) => {
 r.patch("/:id", ah(async (req, res) => {
   const input = parse(z.object({
     status: z.enum(HK_STATUSES).optional(),
+    task: z.enum(HK_TASK_TYPES).optional(),
     assignedTo: z.string().optional(),
     priority: z.enum(PRIORITIES).optional(),
     note: z.string().optional(),
@@ -48,7 +49,8 @@ r.patch("/:id", ah(async (req, res) => {
   const task = await HousekeepingTask.findById(req.params.id).populate("room");
   if (!task) throw notFound("Task");
   Object.assign(task, input);
-  if (input.status === "Done") {
+  if (input.status && input.status !== "Done") task.completedAt = null;
+  if (input.status === "Done" && !task.completedAt) {
     task.completedAt = new Date();
     // Finishing a cleaning task on a dirty room makes it sellable again.
     if (task.room.status === "Dirty" && ["Checkout Clean", "Full Clean", "Deep Clean"].includes(task.task)) {

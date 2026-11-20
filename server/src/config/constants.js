@@ -122,3 +122,5 @@ export const HK_STATUSES = ["Pending", "In Progress", "Done"];
 export const PRIORITIES = ["Low", "Normal", "High", "Urgent"];
 
 export const POS_ORDER_STATUSES = ["In Kitchen", "Served", "Settled", "Cancelled"];
+// Restaurant floor plan shown in the POS "New order" table picker.
+export const POS_TABLES = Array.from({ length: 12 }, (_, i) => `T${i + 1}`);

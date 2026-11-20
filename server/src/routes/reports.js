@@ -24,8 +24,8 @@ const REPORTS = {
     return {
       title: "Room Status & Occupancy",
       columns: [col("room", "Room"), col("property", "Property"), col("floor", "Floor"), col("type", "Type"), col("status", "Status"), col("rate", "Rate", "money"), col("guest", "Guest"), col("until", "Until", "date")],
-      rows: rooms.map((x) => ({ room: x.number, property: x.property.name, floor: x.floor === 0 ? "Ground" : x.floor, type: x.type, status: x.status, rate: x.rate, guest: x.currentReservation?.guestName || "", until: x.currentReservation?.checkOut || "" })),
-      summary: [{ label: "Rooms", value: rooms.length }, { label: "Occupied", value: occ }, { label: "Occupancy", value: `${Math.round((occ / (rooms.length || 1)) * 100)}%` }],
+      rows: rooms.map((x) => ({ _resId: x.currentReservation?._id, room: x.number, property: x.property.name, floor: x.floor === 0 ? "Ground" : x.floor, type: x.type, status: x.status, rate: x.rate, guest: x.currentReservation?.guestName || "", until: x.currentReservation?.checkOut || "" })),
+      summary: [{ label: "Rooms", value: rooms.length }, { label: "Occupied", value: occ, filter: { key: "status", in: ["Occupied"] } }, { label: "Available", value: rooms.filter((x) => x.status === "Available").length, filter: { key: "status", in: ["Available"] } }, { label: "Dirty", value: rooms.filter((x) => x.status === "Dirty").length, filter: { key: "status", in: ["Dirty"] } }, { label: "Occupancy", value: `${Math.round((occ / (rooms.length || 1)) * 100)}%` }],
     };
   },
 
@@ -34,8 +34,8 @@ const REPORTS = {
     return {
       title: "Arrivals",
       columns: [col("conf", "Confirmation"), col("guest", "Guest"), col("mobile", "Mobile"), col("property", "Property"), col("room", "Room"), col("checkIn", "Arrival", "date"), col("nights", "Nights"), col("status", "Status"), col("balance", "Balance", "money")],
-      rows: rows.map((x) => ({ conf: x.confirmationNo, guest: x.guestName, mobile: x.guestMobile, property: x.property.name, room: x.room?.number || "TBA", checkIn: x.checkIn, nights: nightsBetween(x.checkIn, x.checkOut), status: x.status, balance: x.totals.balance })),
-      summary: [{ label: "Arrivals", value: rows.length }, { label: "Checked in", value: rows.filter((x) => ["Checked In", "Checked Out"].includes(x.status)).length }, { label: "No shows", value: rows.filter((x) => x.status === "No Show").length }],
+      rows: rows.map((x) => ({ _resId: x._id, conf: x.confirmationNo, guest: x.guestName, mobile: x.guestMobile, property: x.property.name, room: x.room?.number || "TBA", checkIn: x.checkIn, nights: nightsBetween(x.checkIn, x.checkOut), status: x.status, balance: x.totals.balance })),
+      summary: [{ label: "Arrivals", value: rows.length }, { label: "Checked in", value: rows.filter((x) => ["Checked In", "Checked Out"].includes(x.status)).length, filter: { key: "status", in: ["Checked In", "Checked Out"] } }, { label: "No shows", value: rows.filter((x) => x.status === "No Show").length, filter: { key: "status", in: ["No Show"] } }],
     };
   },
 
@@ -44,8 +44,8 @@ const REPORTS = {
     return {
       title: "Departures",
       columns: [col("conf", "Confirmation"), col("guest", "Guest"), col("room", "Room"), col("checkOut", "Departure", "date"), col("status", "Status"), col("total", "Total", "money"), col("paid", "Paid", "money"), col("balance", "Balance", "money")],
-      rows: rows.map((x) => ({ conf: x.confirmationNo, guest: x.guestName, room: x.room?.number || "—", checkOut: x.checkOut, status: x.status, total: x.totals.total, paid: x.totals.paid, balance: x.totals.balance })),
-      summary: [{ label: "Departures", value: rows.length }, { label: "Outstanding", value: round2(rows.reduce((s, x) => s + Math.max(0, x.totals.balance), 0)), type: "money" }],
+      rows: rows.map((x) => ({ _resId: x._id, conf: x.confirmationNo, guest: x.guestName, room: x.room?.number || "—", checkOut: x.checkOut, status: x.status, total: x.totals.total, paid: x.totals.paid, balance: x.totals.balance })),
+      summary: [{ label: "Departures", value: rows.length }, { label: "Outstanding", value: round2(rows.reduce((s, x) => s + Math.max(0, x.totals.balance), 0)), type: "money", filter: { key: "balance", gt: 0 } }],
     };
   },
 
@@ -54,8 +54,8 @@ const REPORTS = {
     return {
       title: "In-House Guests",
       columns: [col("room", "Room"), col("guest", "Guest"), col("mobile", "Mobile"), col("pax", "Pax"), col("checkIn", "Arrived", "date"), col("checkOut", "Departs", "date"), col("billTo", "Bill to"), col("balance", "Balance", "money")],
-      rows: rows.map((x) => ({ room: x.room?.number, guest: x.guestName + (x.isVIP ? " ★" : ""), mobile: x.guestMobile, pax: `${x.adults}A ${x.children}C`, checkIn: x.checkIn, checkOut: x.checkOut, billTo: x.billTo, balance: x.totals.balance })),
-      summary: [{ label: "In-house", value: rows.length }, { label: "Guests", value: rows.reduce((s, x) => s + x.adults + x.children, 0) }, { label: "Open balance", value: round2(rows.reduce((s, x) => s + x.totals.balance, 0)), type: "money" }],
+      rows: rows.map((x) => ({ _resId: x._id, room: x.room?.number, guest: x.guestName + (x.isVIP ? " ★" : ""), mobile: x.guestMobile, pax: `${x.adults}A ${x.children}C`, checkIn: x.checkIn, checkOut: x.checkOut, billTo: x.billTo, balance: x.totals.balance })),
+      summary: [{ label: "In-house", value: rows.length }, { label: "Guests", value: rows.reduce((s, x) => s + x.adults + x.children, 0) }, { label: "Open balance", value: round2(rows.reduce((s, x) => s + x.totals.balance, 0)), type: "money", filter: { key: "balance", ne: 0 } }],
     };
   },
 
@@ -92,7 +92,7 @@ const REPORTS = {
       { $sort: { "folio.postedAt": 1 } },
       { $project: { guestName: 1, confirmationNo: 1, f: "$folio" } },
     ]);
-    const rows = lines.map((l) => ({ at: l.f.postedAt, receipt: l.f.receiptNo, guest: l.guestName, conf: l.confirmationNo, kind: l.f.kind, method: l.f.method, reference: l.f.reference || "", by: l.f.postedBy, amount: l.f.kind === "refund" ? -l.f.amount : l.f.amount }));
+    const rows = lines.map((l) => ({ _resId: l._id, at: l.f.postedAt, receipt: l.f.receiptNo, guest: l.guestName, conf: l.confirmationNo, kind: l.f.kind, method: l.f.method, reference: l.f.reference || "", by: l.f.postedBy, amount: l.f.kind === "refund" ? -l.f.amount : l.f.amount }));
     const byMethod = {};
     rows.filter((x) => x.kind !== "tip").forEach((x) => { byMethod[x.method] = round2((byMethod[x.method] || 0) + x.amount); });
     return {
@@ -101,8 +101,8 @@ const REPORTS = {
       rows,
       summary: [
         { label: "Net collected", value: round2(rows.filter((x) => x.kind !== "tip").reduce((s, x) => s + x.amount, 0)), type: "money" },
-        ...Object.entries(byMethod).map(([k, v]) => ({ label: k, value: v, type: "money" })),
-        { label: "Tips", value: round2(rows.filter((x) => x.kind === "tip").reduce((s, x) => s + x.amount, 0)), type: "money" },
+        ...Object.entries(byMethod).map(([k, v]) => ({ label: k, value: v, type: "money", filter: { key: "method", in: [k] } })),
+        { label: "Tips", value: round2(rows.filter((x) => x.kind === "tip").reduce((s, x) => s + x.amount, 0)), type: "money", filter: { key: "kind", in: ["tip"] } },
       ],
     };
   },
@@ -148,8 +148,8 @@ const REPORTS = {
     return {
       title: "Cancellations & No-Shows",
       columns: [col("conf", "Confirmation"), col("guest", "Guest"), col("status", "Status"), col("checkIn", "Arrival", "date"), col("reason", "Reason"), col("fee", "Fee retained", "money"), col("balance", "Balance", "money")],
-      rows: rows.map((x) => ({ conf: x.confirmationNo, guest: x.guestName, status: x.status, checkIn: x.checkIn, reason: x.cancelReason || "", fee: x.totals.total, balance: x.totals.balance })),
-      summary: [{ label: "Cancelled", value: rows.filter((x) => x.status === "Cancelled").length }, { label: "No shows", value: rows.filter((x) => x.status === "No Show").length }],
+      rows: rows.map((x) => ({ _resId: x._id, conf: x.confirmationNo, guest: x.guestName, status: x.status, checkIn: x.checkIn, reason: x.cancelReason || "", fee: x.totals.total, balance: x.totals.balance })),
+      summary: [{ label: "Cancelled", value: rows.filter((x) => x.status === "Cancelled").length, filter: { key: "status", in: ["Cancelled"] } }, { label: "No shows", value: rows.filter((x) => x.status === "No Show").length, filter: { key: "status", in: ["No Show"] } }],
     };
   },
 
@@ -158,10 +158,10 @@ const REPORTS = {
     return {
       title: "Outstanding Balances & Credits",
       columns: [col("conf", "Confirmation"), col("guest", "Guest"), col("mobile", "Mobile"), col("status", "Status"), col("checkOut", "Departed", "date"), col("billTo", "Bill to"), col("override", "Override reason"), col("balance", "Balance", "money")],
-      rows: rows.map((x) => ({ conf: x.confirmationNo, guest: x.guestName, mobile: x.guestMobile, status: x.status, checkOut: x.checkOut, billTo: x.billToName || x.billTo, override: x.checkoutOverride?.reason || "", balance: x.totals.balance })),
+      rows: rows.map((x) => ({ _resId: x._id, conf: x.confirmationNo, guest: x.guestName, mobile: x.guestMobile, status: x.status, checkOut: x.checkOut, billTo: x.billToName || x.billTo, override: x.checkoutOverride?.reason || "", balance: x.totals.balance })),
       summary: [
-        { label: "Receivable", value: round2(rows.filter((x) => x.totals.balance > 0).reduce((s, x) => s + x.totals.balance, 0)), type: "money" },
-        { label: "Refunds due", value: round2(-rows.filter((x) => x.totals.balance < 0).reduce((s, x) => s + x.totals.balance, 0)), type: "money" },
+        { label: "Receivable", value: round2(rows.filter((x) => x.totals.balance > 0).reduce((s, x) => s + x.totals.balance, 0)), type: "money", filter: { key: "balance", gt: 0 } },
+        { label: "Refunds due", value: round2(-rows.filter((x) => x.totals.balance < 0).reduce((s, x) => s + x.totals.balance, 0)), type: "money", filter: { key: "balance", lt: 0 } },
       ],
     };
   },
