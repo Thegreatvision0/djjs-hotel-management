@@ -1,10 +1,10 @@
 import { useRef, useState } from "react";
 import clsx from "clsx";
-import { Minus, Plus, ShoppingBag, Trash2, ChefHat, BedDouble, UtensilsCrossed, Settings2, Check } from "lucide-react";
+import { Minus, Plus, ShoppingBag, Trash2, ChefHat, BedDouble, UtensilsCrossed, Settings2, Check, ChevronRight, Printer } from "lucide-react";
 import { api } from "../api/client";
 import { useApiMutation, useApiQuery, useMeta } from "../api/hooks";
-import { PageHeader, Card, CardHeader, Button, Tabs, Segmented, Input, Select, Modal, Badge, Empty, Loading, Toggle } from "../components/ui";
-import { inr, relTime } from "../lib/format";
+import { PageHeader, Card, CardHeader, Button, Tabs, Segmented, Input, Select, Modal, Badge, Empty, Loading, Toggle, KV } from "../components/ui";
+import { inr, relTime, fmtDateTime } from "../lib/format";
 
 const STATUS_TONE = { "In Kitchen": "bg-amber-50 text-amber-700 ring-amber-600/20", Served: "bg-sky-50 text-sky-700 ring-sky-600/15", Settled: "bg-emerald-50 text-emerald-700 ring-emerald-600/15", Cancelled: "bg-zinc-100 text-zinc-500 ring-zinc-400/20" };
 
@@ -32,6 +32,94 @@ function MenuManager({ items, onClose }) {
   );
 }
 
+const DEFAULT_TABLES = Array.from({ length: 12 }, (_, i) => `T${i + 1}`);
+const esc = (v) => String(v ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+// Restaurant floor: pick a table; tables with an unsettled order show as busy.
+function TablePicker({ tables, value, onChange, openOrders }) {
+  const busy = {};
+  openOrders.filter((o) => !o.reservation && o.table).forEach((o) => {
+    const k = o.table.trim().toUpperCase();
+    busy[k] = { count: (busy[k]?.count || 0) + 1, total: (busy[k]?.total || 0) + o.total };
+  });
+  const sel = value.trim().toUpperCase();
+  const isListed = tables.some((t) => t.toUpperCase() === sel);
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between text-xs text-slate-500">
+        <span className="font-semibold uppercase tracking-wide">Select table</span>
+        <span className="flex items-center gap-3"><span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-emerald-500" />Free</span><span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-500" />Busy</span></span>
+      </div>
+      <div className="grid grid-cols-4 gap-2">
+        {tables.map((t) => {
+          const b = busy[t.toUpperCase()];
+          const active = sel === t.toUpperCase();
+          return (
+            <button key={t} type="button" onClick={() => onChange(active ? "" : t)} title={b ? `${b.count} open order(s) · ${inr(b.total)}` : "Free"}
+              className={clsx("flex flex-col items-center justify-center rounded-lg border px-1 py-2 text-[13px] font-semibold transition",
+                active ? "border-ink-900 bg-ink-900 text-white" : b ? "border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100" : "border-emerald-200 bg-emerald-50/60 text-emerald-800 hover:bg-emerald-100")}>
+              {t}
+              <span className={clsx("text-[10px] font-medium", active ? "text-white/70" : "opacity-70")}>{b ? `busy · ${b.count}` : "free"}</span>
+            </button>
+          );
+        })}
+      </div>
+      <Input placeholder="Other table / area e.g. Garden 2" value={isListed ? "" : value} onChange={(e) => onChange(e.target.value)} />
+      {sel && <p className="text-xs text-slate-500">Order for <span className="font-semibold text-ink-900">Table {value.trim()}</span>{busy[sel] && <span className="text-amber-700"> · already has {busy[sel].count} open order(s)</span>}</p>}
+    </div>
+  );
+}
+
+// Full order info with the same actions as the list.
+function OrderDetail({ order: o, onClose, onUpdate, onSettle, updating }) {
+  const qtyTotal = o.items.reduce((s, i) => s + i.qty, 0);
+  const printSlip = () => {
+    const w = window.open("", "_blank", "width=380,height=600");
+    if (!w) return;
+    const rows = o.items.map((i) => `<tr><td>${i.qty}× ${esc(i.name)}</td><td style="text-align:right">${inr(i.price * i.qty)}</td></tr>`).join("");
+    const who = o.reservation ? `Room ${esc(o.roomLabel)} · ${esc(o.guestName)}` : `Table ${esc(o.table)}`;
+    w.document.write(`<html><head><title>${esc(o.orderNo)}</title><style>body{font:13px monospace;padding:12px}table{width:100%;border-collapse:collapse}td{padding:3px 0}hr{border:0;border-top:1px dashed #999}</style></head><body><b>${esc(o.orderNo)}</b><br>${who}<br>${fmtDateTime(o.createdAt)}<hr><table>${rows}</table><hr><b>Total ${inr(o.total)}</b><br>${esc(o.status)}${o.paymentMethod ? " · " + esc(o.paymentMethod) : ""}</body></html>`);
+    w.document.close();
+    w.focus();
+    w.print();
+  };
+  return (
+    <Modal open onClose={onClose} size="lg" title={`Order ${o.orderNo}`} subtitle={o.reservation ? `Room ${o.roomLabel} · ${o.guestName}` : `Table ${o.table}`}
+      footer={<>
+        <Button variant="secondary" icon={Printer} className="mr-auto" onClick={printSlip}>Print</Button>
+        {o.status === "In Kitchen" && !o.reservation && <Button variant="danger-ghost" loading={updating} onClick={() => onUpdate({ id: o._id, status: "Cancelled" })}>Cancel order</Button>}
+        {o.status === "In Kitchen" && <Button variant="secondary" loading={updating} onClick={() => onUpdate({ id: o._id, status: "Served" })}>Mark served</Button>}
+        {o.status === "Served" && (o.reservation
+          ? <Button variant="success" icon={Check} loading={updating} onClick={() => onUpdate({ id: o._id, status: "Settled" })}>Close (on folio)</Button>
+          : <Button variant="success" onClick={() => onSettle(o)}>Settle</Button>)}
+        <Button variant="secondary" onClick={onClose}>Close</Button>
+      </>}>
+      <div className="mb-5 grid grid-cols-2 gap-4 rounded-xl border border-line bg-slate-50/60 p-4 sm:grid-cols-4">
+        <KV label="Status"><Badge className={STATUS_TONE[o.status]}>{o.status}</Badge></KV>
+        <KV label={o.reservation ? "Charged to" : "Table"}>{o.reservation ? `Room ${o.roomLabel}` : o.table}</KV>
+        <KV label="Guest">{o.guestName}</KV>
+        <KV label="Payment">{o.reservation ? "Room folio" : o.paymentMethod}</KV>
+        <KV label="Ordered">{fmtDateTime(o.createdAt)}</KV>
+        <KV label="Last update">{fmtDateTime(o.updatedAt)}</KV>
+        <KV label="Taken by">{o.createdBy}</KV>
+        <KV label="Items">{qtyTotal}</KV>
+      </div>
+      <div className="overflow-hidden rounded-xl border border-line">
+        <table className="table-base">
+          <thead><tr><th>Item</th><th className="text-right">Rate</th><th className="text-right">Qty</th><th className="text-right">Amount</th></tr></thead>
+          <tbody>
+            {o.items.map((i, k) => (
+              <tr key={k}><td className="font-medium">{i.name}</td><td className="text-right tabular-nums">{inr(i.price)}</td><td className="text-right tabular-nums">{i.qty}</td><td className="text-right font-medium tabular-nums">{inr(i.price * i.qty)}</td></tr>
+            ))}
+            <tr><td colSpan={3} className="text-right text-[13px] text-slate-500">Total</td><td className="text-right text-lg font-semibold tabular-nums">{inr(o.total)}</td></tr>
+          </tbody>
+        </table>
+      </div>
+      {o.note && <p className="mt-4 rounded-lg bg-amber-50 px-3 py-2 text-[13px] text-amber-900"><span className="font-semibold">Note:</span> {o.note}</p>}
+    </Modal>
+  );
+}
+
 export default function PosPage() {
   const { data: meta } = useMeta();
   const [tab, setTab] = useState("order");
@@ -42,6 +130,7 @@ export default function PosPage() {
   const [resId, setResId] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
   const [settle, setSettle] = useState(null);
+  const [detailId, setDetailId] = useState(null);
   const cartRef = useRef(null);
   const cartCount = cart.reduce((s, c) => s + c.qty, 0);
   const { data: menu, isLoading } = useApiQuery("pos", "/pos/menu");
@@ -52,6 +141,8 @@ export default function PosPage() {
   const visible = items.filter((i) => cat === "All" || i.category === cat);
   const total = cart.reduce((s, c) => s + c.price * c.qty, 0);
   const openOrders = (orders?.items || []).filter((o) => ["In Kitchen", "Served"].includes(o.status));
+  const detail = detailId && (orders?.items || []).find((o) => o._id === detailId);
+  const tables = meta.posTables?.length ? meta.posTables : DEFAULT_TABLES;
 
   const add = (i) => setCart((c) => (c.some((x) => x._id === i._id) ? c.map((x) => (x._id === i._id ? { ...x, qty: x.qty + 1 } : x)) : [...c, { ...i, qty: 1 }]));
   const qty = (id, d) => setCart((c) => c.map((x) => (x._id === id ? { ...x, qty: x.qty + d } : x)).filter((x) => x.qty > 0));
@@ -92,7 +183,7 @@ export default function PosPage() {
             <CardHeader title="Current order" icon={ShoppingBag} action={cart.length > 0 && <Button size="xs" variant="ghost" icon={Trash2} onClick={() => setCart([])}>Clear</Button>} />
             <div className="space-y-4 p-4">
               <Segmented value={target} onChange={setTarget} options={[{ value: "table", label: "Table", icon: UtensilsCrossed }, { value: "room", label: "Room charge", icon: BedDouble }]} />
-              {target === "table" ? <Input placeholder="Table no. e.g. T4" value={table} onChange={(e) => setTable(e.target.value)} />
+              {target === "table" ? <TablePicker tables={tables} value={table} onChange={setTable} openOrders={openOrders} />
                 : <Select value={resId} onChange={(e) => setResId(e.target.value)} placeholder="Select in-house guest…" options={(inHouse?.items || []).map((r) => ({ value: r._id, label: `${r.room?.number} · ${r.guestName}` }))} />}
               {cart.length === 0 ? <p className="py-8 text-center text-[13px] text-slate-400">Tap menu items to add them</p> : (
                 <div className="divide-y divide-line">
@@ -110,7 +201,7 @@ export default function PosPage() {
               <div className="flex items-center justify-between border-t border-line pt-3"><span className="text-[13px] text-slate-500">Total</span><span className="text-xl font-semibold">{inr(total)}</span></div>
               <Button className="w-full" size="lg" variant="gold" loading={place.isPending} disabled={!cart.length || (target === "table" ? !table.trim() : !resId)}
                 onClick={() => place.mutate({ table: target === "table" ? table : "", reservationId: target === "room" ? resId : null, items: cart.map((c) => ({ menuItemId: c._id, qty: c.qty })) })}>
-                {target === "room" ? "Charge to room" : "Send to kitchen"}
+                {target === "room" ? "Charge to room" : table.trim() ? `Send to kitchen · Table ${table.trim()}` : "Select a table"}
               </Button>
             </div>
           </Card>
@@ -119,16 +210,16 @@ export default function PosPage() {
         <Card className="overflow-hidden">
           {!(orders?.items || []).length ? <Empty icon={ChefHat} title="No orders yet" /> : (
             <div className="table-scroll"><table className="table-base">
-              <thead><tr><th>Order</th><th>For</th><th className="hidden md:table-cell">Items</th><th className="text-right">Total</th><th className="hidden sm:table-cell">Status</th><th /></tr></thead>
+              <thead><tr><th>Order</th><th>For</th><th className="hidden md:table-cell">Items</th><th className="text-right">Total</th><th className="hidden sm:table-cell">Status</th><th /><th className="w-6" /></tr></thead>
               <tbody>
                 {orders.items.map((o) => (
-                  <tr key={o._id}>
+                  <tr key={o._id} onClick={() => setDetailId(o._id)} className="cursor-pointer hover:bg-gold-50/40" title="Open order details">
                     <td className="font-mono text-xs">{o.orderNo}<span className="block font-sans text-[11px] text-slate-400">{relTime(o.createdAt)}</span></td>
                     <td>{o.reservation ? <span>Room {o.roomLabel}<span className="block text-xs text-slate-500">{o.guestName}</span></span> : `Table ${o.table}`}</td>
                     <td className="hidden max-w-[320px] text-[13px] text-slate-600 md:table-cell">{o.items.map((i) => `${i.qty}× ${i.name}`).join(", ")}</td>
                     <td className="text-right font-medium">{inr(o.total)}<div className="mt-1 sm:hidden"><Badge className={STATUS_TONE[o.status]}>{o.status}</Badge></div></td>
                     <td className="hidden sm:table-cell"><Badge className={STATUS_TONE[o.status]}>{o.status}</Badge>{o.paymentMethod && <span className="ml-1 text-xs text-slate-500">{o.paymentMethod}</span>}</td>
-                    <td className="text-right">
+                    <td className="text-right" onClick={(e) => e.stopPropagation()}>
                       <div className="flex flex-col items-end gap-1 sm:flex-row sm:justify-end">
                       {o.status === "In Kitchen" && <Button size="xs" variant="secondary" onClick={() => updateOrder.mutate({ id: o._id, status: "Served" })}>Served</Button>}
                       {o.status === "Served" && (o.reservation
@@ -137,6 +228,7 @@ export default function PosPage() {
                       {o.status === "In Kitchen" && !o.reservation && <Button size="xs" variant="danger-ghost" onClick={() => updateOrder.mutate({ id: o._id, status: "Cancelled" })}>Cancel</Button>}
                       </div>
                     </td>
+                    <td className="pl-0"><ChevronRight className="h-4 w-4 text-slate-300" /></td>
                   </tr>
                 ))}
               </tbody>
@@ -156,6 +248,7 @@ export default function PosPage() {
         </div>
       )}
       {menuOpen && <MenuManager items={items} onClose={() => setMenuOpen(false)} />}
+      {detail && <OrderDetail order={detail} onClose={() => setDetailId(null)} updating={updateOrder.isPending} onUpdate={(b) => updateOrder.mutate(b)} onSettle={(o) => setSettle(o)} />}
       {settle && (
         <Modal open onClose={() => setSettle(null)} size="sm" title={`Settle ${settle.orderNo}`} subtitle={`Table ${settle.table} · ${inr(settle.total)}`}>
           <div className="grid grid-cols-2 gap-2">
